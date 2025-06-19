@@ -12,27 +12,42 @@ site_path = "PetcareBrandMarketingTeam"
 site_url = f"{sp_url}{site_path}"
 document_library = "Shared%20Documents"
 
-# Target Excel file inside the document library
-orders_summary_path = (
+# File relative path inside the document library
+orders_summary_relative_path = (
     "Core Brands/Promotions/Vanguard Annual Programs/2025/"
     "2025 CAC - free doses/Tracker/Orders Summary.xlsx"
 )
 
-# Service account credentials retrieved from Databricks secrets
+# Credentials from Databricks secrets
 scope = os.environ.get("NGSE_KEY_VAULT_SCOPE")
 username = dbutils.secrets.get(scope=scope, key="svc-azr-ngsesharepnt-user")
 password = dbutils.secrets.get(scope=scope, key="svc-azr-ngsesharepnt-password")
 
-# Authenticate and create a client context
 credentials = UserCredential(username, password)
 ctx = ClientContext(site_url).with_credentials(credentials)
 
 
-def read_excel_from_sharepoint(ctx, library, relative_path, sheet_name="Sheet1"):
-    """Download an Excel file from SharePoint and return it as a pandas DataFrame."""
+def check_connection(context: ClientContext) -> None:
+    """Validate SharePoint connection."""
+    try:
+        context.web.get().execute_query()
+        print(f"Connected to site: {site_url}")
+    except ClientRequestException as exc:
+        if exc.response_code in (401, 403):
+            raise PermissionError("Unauthorized access to SharePoint") from exc
+        raise
+
+
+def read_excel_from_sharepoint(
+    context: ClientContext,
+    library: str,
+    relative_path: str,
+    sheet_name: str = "Sheet1",
+) -> pd.DataFrame:
+    """Download an Excel file from SharePoint and return a pandas DataFrame."""
     file_url = f"/{site_path}/{library}/{relative_path}"
     try:
-        response = File.open_binary(ctx, file_url)
+        response = File.open_binary(context, file_url)
         data = BytesIO(response.content)
         return pd.read_excel(data, sheet_name=sheet_name, engine="openpyxl")
     except ClientRequestException as exc:
@@ -41,11 +56,23 @@ def read_excel_from_sharepoint(ctx, library, relative_path, sheet_name="Sheet1")
         raise
 
 
+def read_as_spark_df(
+    context: ClientContext,
+    library: str,
+    relative_path: str,
+    sheet_name: str = "Sheet1",
+):
+    """Return the Excel file from SharePoint as a Spark DataFrame."""
+    pandas_df = read_excel_from_sharepoint(context, library, relative_path, sheet_name)
+    return spark.createDataFrame(pandas_df)
+
+
 if __name__ == "__main__":
     try:
-        df = read_excel_from_sharepoint(ctx, document_library, orders_summary_path)
-        print(df)
-    except PermissionError as e:
-        print(e)
-    except Exception as e:
-        print(f"Failed to read '{orders_summary_path}': {e}")
+        check_connection(ctx)
+        spark_df = read_as_spark_df(ctx, document_library, orders_summary_relative_path)
+        spark_df.show()
+    except PermissionError as err:
+        print(err)
+    except Exception as err:
+        print(f"Failed to read '{orders_summary_relative_path}': {err}")
