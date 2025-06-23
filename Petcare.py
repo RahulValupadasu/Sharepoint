@@ -1,10 +1,17 @@
 import os
 from io import BytesIO
+from typing import Optional
+
 import pandas as pd
 from office365.sharepoint.client_context import ClientContext
 from office365.runtime.auth.user_credential import UserCredential
 from office365.sharepoint.files.file import File
 from office365.runtime.client_request_exception import ClientRequestException
+from pyspark.sql import SparkSession
+
+# "dbutils" and "spark" are automatically available in Databricks notebooks.
+# When running this script elsewhere, provide compatible objects (e.g. from
+# Databricks Connect) or pass a ``SparkSession`` to ``read_as_spark_df``.
 
 # SharePoint configuration
 sp_url = "https://zoetis.sharepoint.com/"
@@ -21,7 +28,8 @@ orders_summary_relative_path = (
 )
 
 # Credentials from Databricks secrets
-# Service account credentials retrieved from Databricks secrets
+# "dbutils.secrets" retrieves secrets stored in Databricks. Replace these
+# lines with your own secrets management solution when running elsewhere.
 scope = os.environ.get("NGSE_KEY_VAULT_SCOPE")
 username = dbutils.secrets.get(scope=scope, key="svc-azr-ngsesharepnt-user")
 password = dbutils.secrets.get(scope=scope, key="svc-azr-ngsesharepnt-password")
@@ -67,10 +75,13 @@ def read_as_spark_df(
     library: str,
     relative_path: str,
     sheet_name: str = "Sheet1",
+    spark_session: Optional[SparkSession] = None,
 ):
     """Return the Excel file from SharePoint as a Spark DataFrame."""
     pandas_df = read_excel_from_sharepoint(context, library, relative_path, sheet_name)
-    return spark.createDataFrame(pandas_df)
+    if spark_session is None:
+        spark_session = spark  # type: ignore[name-defined]
+    return spark_session.createDataFrame(pandas_df)
 
 
 if __name__ == "__main__":
