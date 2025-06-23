@@ -8,6 +8,7 @@ from office365.runtime.auth.user_credential import UserCredential
 from office365.sharepoint.files.file import File
 from office365.runtime.client_request_exception import ClientRequestException
 from pyspark.sql import SparkSession
+from urllib.parse import quote
 
 # "dbutils" and "spark" are automatically available in Databricks notebooks.
 # When running this script elsewhere, provide compatible objects (e.g. from
@@ -24,7 +25,7 @@ document_library = "Shared Documents"
 # File relative path inside the document library
 orders_summary_relative_path = (
     "Core Brands/Promotions/Vanguard Annual Programs/2025/"
-    "2025 CAC - free doses/Tracker/Orders Summary.xlsx"
+    "2025 CAC - free doses/Tracker/order_summary.xlsx"
 )
 
 # Credentials from Databricks secrets
@@ -56,7 +57,9 @@ def read_excel_from_sharepoint(
     sheet_name: str = "Sheet1",
 ) -> pd.DataFrame:
     """Download an Excel file from SharePoint and return a pandas DataFrame."""
-    file_url = f"/{site_path}/{library}/{relative_path}"
+    raw_url = f"/{site_path}/{library}/{relative_path}"
+    # Encode spaces and special characters but keep the slash separators
+    file_url = quote(raw_url, safe="/")
     try:
         response = File.open_binary(context, file_url)
         data = BytesIO(response.content)
