@@ -140,16 +140,19 @@ def save_excel_to_adls(
         raise
 
     tmp_filename = f"/tmp/{uuid.uuid4()}.xlsx"
-    with open(tmp_filename, "wb") as f:
-        f.write(content)
+    try:
+        with open(tmp_filename, "wb") as f:
+            f.write(content)
 
-    wb = load_workbook(tmp_filename)
-    if not any(sheet.sheet_state == "visible" for sheet in wb.worksheets):
-        if wb.worksheets:
-            wb.worksheets[0].sheet_state = "visible"
-    wb.save(tmp_filename)
+        wb = load_workbook(tmp_filename)
+        if not any(sheet.sheet_state == "visible" for sheet in wb.worksheets):
+            if wb.worksheets:
+                wb.worksheets[0].sheet_state = "visible"
+        wb.save(tmp_filename)
 
-    dbutils.fs.cp(f"file:{tmp_filename}", adls_path, True)
+        dbutils.fs.cp(f"file:{tmp_filename}", adls_path, True)
+    finally:
+        dbutils.fs.rm(f"file:{tmp_filename}")
 
 # Usage:
 check_connection(ctx)
