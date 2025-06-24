@@ -28,6 +28,12 @@ orders_summary_relative_path = (
     "2025 CAC - free doses/Tracker/Orders summary.xlsx"
 )
 
+# Placeholder path in ADLS where the Excel file will be persisted
+adls_output_path = (
+    "abfss://<container>@<storage-account>.dfs.core.windows.net/path/"
+    "OrdersSummary.xlsx"
+)
+
 # Credentials from Databricks secrets
 # "dbutils.secrets" retrieves secrets stored in Databricks. Replace these
 # lines with your own secrets management solution when running elsewhere.
@@ -112,7 +118,41 @@ def read_excel_as_spark(
     )
     return df
 
+
+def save_excel_to_adls(
+    context: ClientContext,
+    library: str,
+    relative_path: str,
+    adls_path: str,
+) -> None:
+    """Download an Excel file from SharePoint and copy it to ADLS."""
+    file_url = f"/{site_path}/{library}/{relative_path}"
+    print(f"Downloading for ADLS: {file_url}")
+
+    try:
+        resp = File.open_binary(context, file_url)
+        content = resp.content
+    except ClientRequestException as exc:
+        if exc.response_code in (401, 403):
+            raise PermissionError("Unauthorized") from exc
+        if exc.response_code == 404:
+            raise FileNotFoundError(f"Not found: {file_url}") from exc
+        raise
+
+    tmp_filename = f"/tmp/{uuid.uuid4()}.xlsx"
+    with open(tmp_filename, "wb") as f:
+        f.write(content)
+
+    wb = load_workbook(tmp_filename)
+    if not any(sheet.sheet_state == "visible" for sheet in wb.worksheets):
+        if wb.worksheets:
+            wb.worksheets[0].sheet_state = "visible"
+    wb.save(tmp_filename)
+
+    dbutils.fs.cp(f"file:{tmp_filename}", adls_path, True)
+
 # Usage:
 check_connection(ctx)
+save_excel_to_adls(ctx, document_library, orders_summary_relative_path, adls_output_path)
 spark_df = read_excel_as_spark(ctx, document_library, orders_summary_relative_path, sheet_name="Sheet1")
 display(spark_df)
